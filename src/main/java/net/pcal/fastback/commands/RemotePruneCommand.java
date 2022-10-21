@@ -22,7 +22,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.CommitAndPushTask;
+import net.pcal.fastback.tasks.RemotePruneTask;
+import net.pcal.fastback.utils.SnapshotId;
+
+import java.util.Collection;
 
 import static net.minecraft.server.command.CommandManager.literal;
 import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
@@ -33,37 +36,33 @@ import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
 
 /**
- * Perform a local backup.
+ * Command to prune all snapshots that are not to be retained per the retention policy.
  *
  * @author pcal
  * @since 0.2.0
  */
-enum FullCommand implements Command {
+enum RemotePruneCommand implements Command {
 
     INSTANCE;
 
-    private static final String COMMAND_NAME = "full";
+    private static final String COMMAND_NAME = "remote-prune";
 
-    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
+    @Override
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> run(ctx, cc.getSource()))
+                        executes(cc -> remotePrune(ctx, cc.getSource()))
         );
     }
 
-    public static int run(ModContext ctx, ServerCommandSource scs) {
+    private static int remotePrune(final ModContext ctx, final ServerCommandSource scs) {
         final Logger log = commandLogger(ctx, scs);
-        {
-            // workaround for https://github.com/pcal43/fastback/issues/112
-            log.info("Saving before backup");
-            ctx.saveWorld();
-            log.info("Starting backup");
-        }
         gitOp(ctx, WRITE, log, git -> {
-            new CommitAndPushTask(git, ctx, log).call();
-            log.chat(localized("fastback.chat.backup-complete"));
+            final RemotePruneTask pt = new RemotePruneTask(git, ctx, log);
+            final Collection<SnapshotId> pruned = pt.call();
             log.hud(null);
+            log.chat(localized("fastback.chat.prune-done", pruned.size()));
         });
         return SUCCESS;
     }

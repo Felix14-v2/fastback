@@ -27,8 +27,6 @@ import net.pcal.fastback.retention.RetentionPolicy;
 import net.pcal.fastback.retention.RetentionPolicyCodec;
 import net.pcal.fastback.retention.RetentionPolicyType;
 
-import java.io.File;
-
 import static java.util.Objects.requireNonNull;
 import static net.minecraft.server.command.CommandManager.literal;
 import static net.pcal.fastback.ModContext.ExecutionLock.NONE;
@@ -37,23 +35,25 @@ import static net.pcal.fastback.commands.Commands.commandLogger;
 import static net.pcal.fastback.commands.Commands.gitOp;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
-import static net.pcal.fastback.utils.FileUtils.getDirDisplaySize;
 import static org.apache.commons.io.FileUtils.byteCountToDisplaySize;
 import static org.apache.commons.io.FileUtils.sizeOfDirectory;
 
-public class InfoCommand {
+enum InfoCommand implements Command {
+
+    INSTANCE;
 
     private static final String COMMAND_NAME = "info";
 
-    public static void register(LiteralArgumentBuilder<ServerCommandSource> argb, ModContext ctx) {
+    @Override
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> execute(ctx, cc.getSource()))
+                        executes(cc -> info(ctx, cc.getSource()))
         );
     }
 
-    public static int execute(final ModContext ctx, final ServerCommandSource scs) {
+    private static int info(final ModContext ctx, final ServerCommandSource scs) {
         requireNonNull(ctx);
         requireNonNull(scs);
         final Logger log = commandLogger(ctx, scs);
@@ -70,33 +70,42 @@ public class InfoCommand {
             log.chat(localized("fastback.chat.info-shutdown-action", getActionDisplay(wc.shutdownAction())));
             log.chat(localized("fastback.chat.info-autoback-action", getActionDisplay(wc.autobackAction())));
             log.chat(localized("fastback.chat.info-autoback-wait",
-                    wc.autobackWait() == null ? "" : wc.autobackWait().getSeconds()/60));
+                    wc.autobackWait() == null ? "" : wc.autobackWait().getSeconds() / 60));
             // FIXME? this could be implemented more efficiently
             final long backupSize = sizeOfDirectory(git.getRepository().getDirectory());
             final long worldSize = sizeOfDirectory(git.getRepository().getWorkTree()) - backupSize;
             log.chat(localized("fastback.chat.info-world-size", byteCountToDisplaySize(worldSize)));
             log.chat(localized("fastback.chat.info-backup-size", byteCountToDisplaySize(backupSize)));
-            {
-                // show the snapshot retention policy
-                final String encoded = wc.retentionPolicy();
-                if (encoded == null) {
-                    log.chat(localized("fastback.chat.retention-policy-none"));
-                } else {
-                    final RetentionPolicy policy = RetentionPolicyCodec.INSTANCE.
-                            decodePolicy(ctx, RetentionPolicyType.getAvailable(), encoded);
-                    if (policy == null) {
-                        log.chat(localized("fastback.chat.retention-policy-none"));
-                    } else {
-                        log.chat(localized("fastback.chat.retention-policy-set"));
-                        log.chat(policy.getDescription());
-                    }
-                }
-            }
+            showRetentionPolicy(ctx, log,
+                    wc.localRetentionPolicy(),
+                    "fastback.chat.retention-policy-set",
+                    "fastback.chat.retention-policy-none"
+            );
+            showRetentionPolicy(ctx, log,
+                    wc.remoteRetentionPolicy(),
+                    "fastback.chat.remote-retention-policy-set",
+                    "fastback.chat.remote-retention-policy-none"
+            );
         });
         return SUCCESS;
     }
 
     private static String getActionDisplay(SchedulableAction action) {
         return action == null ? SchedulableAction.NONE.getArgumentName() : action.getArgumentName();
+    }
+
+    private static void showRetentionPolicy(ModContext ctx, Logger log, String encodedPolicy, String setKey, String noneKey) {
+        if (encodedPolicy == null) {
+            log.chat(localized(noneKey));
+        } else {
+            final RetentionPolicy policy = RetentionPolicyCodec.INSTANCE.
+                    decodePolicy(ctx, RetentionPolicyType.getAvailable(), encodedPolicy);
+            if (policy == null) {
+                log.chat(localized(noneKey));
+            } else {
+                log.chat(localized(setKey));
+                log.chat(policy.getDescription());
+            }
+        }
     }
 }

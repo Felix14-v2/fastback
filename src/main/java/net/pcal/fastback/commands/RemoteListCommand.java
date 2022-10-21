@@ -18,52 +18,57 @@
 
 package net.pcal.fastback.commands;
 
+import com.google.common.collect.ListMultimap;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
+import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.CommitAndPushTask;
+import net.pcal.fastback.tasks.ListSnapshotsTask;
+import net.pcal.fastback.utils.SnapshotId;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import static net.minecraft.server.command.CommandManager.literal;
-import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
+import static net.pcal.fastback.ModContext.ExecutionLock.NONE;
 import static net.pcal.fastback.commands.Commands.SUCCESS;
 import static net.pcal.fastback.commands.Commands.commandLogger;
 import static net.pcal.fastback.commands.Commands.gitOp;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
+import static net.pcal.fastback.logging.Message.raw;
 
-/**
- * Perform a local backup.
- *
- * @author pcal
- * @since 0.2.0
- */
-enum FullCommand implements Command {
+enum RemoteListCommand implements Command {
 
     INSTANCE;
 
-    private static final String COMMAND_NAME = "full";
+    private static final String COMMAND_NAME = "remote-list";
 
+    @Override
     public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> run(ctx, cc.getSource()))
+                        executes(cc -> remoteList(ctx, cc))
         );
     }
 
-    public static int run(ModContext ctx, ServerCommandSource scs) {
-        final Logger log = commandLogger(ctx, scs);
-        {
-            // workaround for https://github.com/pcal43/fastback/issues/112
-            log.info("Saving before backup");
-            ctx.saveWorld();
-            log.info("Starting backup");
-        }
-        gitOp(ctx, WRITE, log, git -> {
-            new CommitAndPushTask(git, ctx, log).call();
-            log.chat(localized("fastback.chat.backup-complete"));
-            log.hud(null);
+    private static int remoteList(final ModContext ctx, final CommandContext<ServerCommandSource> cc) {
+        final Logger log = commandLogger(ctx, cc.getSource());
+        gitOp(ctx, NONE, log, git -> {
+            final WorldConfig wc = WorldConfig.load(git);
+            final ListMultimap<String, SnapshotId> snapshotsPerWorld = ListSnapshotsTask.listRemoteSnapshots(git, wc, log);
+            final List<SnapshotId> snapshots = new ArrayList<>(snapshotsPerWorld.get(wc.worldUuid()));
+            Collections.sort(snapshots);
+            snapshots.forEach(sid -> log.chat(raw(sid.getName())));
+            log.chat(localized("fastback.chat.remote-list-done", snapshots.size(), wc.getRemotePushUrl()));
+            if (snapshotsPerWorld.keySet().size() > 1) {
+                log.chat(localized("fastback.chat.remote-list-others",
+                        snapshotsPerWorld.size() - 1, snapshotsPerWorld.size() - snapshots.size()));
+            }
         });
         return SUCCESS;
     }

@@ -22,7 +22,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.PruneTask;
+import net.pcal.fastback.tasks.LocalPruneTask;
+import net.pcal.fastback.utils.SnapshotId;
+
+import java.util.Collection;
 
 import static net.minecraft.server.command.CommandManager.literal;
 import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
@@ -38,11 +41,14 @@ import static net.pcal.fastback.logging.Message.localized;
  * @author pcal
  * @since 0.2.0
  */
-public class PruneCommand {
+enum PruneCommand implements Command {
+
+    INSTANCE;
 
     private static final String COMMAND_NAME = "prune";
 
-    public static void register(LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
+    @Override
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
@@ -50,17 +56,14 @@ public class PruneCommand {
         );
     }
 
-    public static int prune(final ModContext ctx, final ServerCommandSource scs) {
+    private static int prune(final ModContext ctx, final ServerCommandSource scs) {
         final Logger log = commandLogger(ctx, scs);
         gitOp(ctx, WRITE, log, git -> {
-            final PruneTask pt = new PruneTask(git, ctx, log);
-            pt.run();
+            final LocalPruneTask pt = new LocalPruneTask(git, ctx, log);
+            final Collection<SnapshotId> pruned = pt.call();
             log.hud(null);
-            log.chat(localized("fastback.chat.prune-done", pt.getPruned()));
-            if (pt.getPruned() > 0) {
-                log.chat(localized("fastback.chat.prune-suggest-gc"));
-            }
-
+            log.chat(localized("fastback.chat.prune-done", pruned.size()));
+            if (pruned.size() > 0) log.chat(localized("fastback.chat.prune-suggest-gc"));
         });
         return SUCCESS;
     }

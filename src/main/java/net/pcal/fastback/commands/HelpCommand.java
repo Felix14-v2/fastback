@@ -29,7 +29,6 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
 import net.pcal.fastback.logging.Logger;
 
-import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -40,34 +39,34 @@ import java.util.concurrent.ExecutionException;
 import static java.util.Objects.requireNonNull;
 import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
-import static net.pcal.fastback.commands.Commands.BACKUP_COMMAND_PERM;
 import static net.pcal.fastback.commands.Commands.FAILURE;
 import static net.pcal.fastback.commands.Commands.SUCCESS;
 import static net.pcal.fastback.commands.Commands.commandLogger;
-import static net.pcal.fastback.commands.Commands.subcommandPermName;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
 
-public class HelpCommand {
+enum HelpCommand implements Command {
+
+    INSTANCE;
 
     private static final String COMMAND_NAME = "help";
     private static final String ARGUMENT = "subcommand";
 
-    public static void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
-        final HelpCommand c = new HelpCommand(ctx);
+    @Override
+    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(c::help).
+                        executes(cc->help(ctx, cc)).
                         then(
                                 argument(ARGUMENT, StringArgumentType.word()).
                                         suggests(new HelpTopicSuggestions(ctx)).
-                                        executes(c::helpSubcommand)
+                                        executes(cc->helpSubcommand(ctx, cc))
                         )
         );
     }
 
-    static class HelpTopicSuggestions implements SuggestionProvider<ServerCommandSource> {
+    private static class HelpTopicSuggestions implements SuggestionProvider<ServerCommandSource> {
 
         private final ModContext ctx;
 
@@ -90,13 +89,7 @@ public class HelpCommand {
         }
     }
 
-    private final ModContext ctx;
-
-    private HelpCommand(final ModContext context) {
-        this.ctx = requireNonNull(context);
-    }
-
-    private int help(CommandContext<ServerCommandSource> cc) {
+    private int help(final ModContext ctx, final CommandContext<ServerCommandSource> cc) {
         final Logger log = commandLogger(ctx, cc.getSource());
         StringWriter subcommands = null;
         for (final String available : getSubcommandNames(cc)) {
@@ -107,25 +100,18 @@ public class HelpCommand {
             }
             subcommands.append(available);
         }
-        log.chat(localized("commands.fastback.help.subcommands", String.valueOf(subcommands)));
-
-        if (this.ctx.isCommandDumpEnabled()) {
-            final StringWriter sink = new StringWriter();
-            writeMarkdownReference(cc, new PrintWriter(sink));
-            log.info(sink.toString());
-        }
-
+        log.chat(localized("fastback.help.subcommands", String.valueOf(subcommands)));
         return SUCCESS;
     }
 
-    private int helpSubcommand(CommandContext<ServerCommandSource> cc) {
+    private int helpSubcommand(final ModContext ctx, final CommandContext<ServerCommandSource> cc) {
         final Logger log = commandLogger(ctx, cc.getSource());
         final Collection<CommandNode<ServerCommandSource>> subcommands = cc.getNodes().get(0).getNode().getChildren();
         final String subcommand = cc.getLastChild().getArgument(ARGUMENT, String.class);
         for (String available : getSubcommandNames(cc)) {
             if (subcommand.equals(available)) {
                 final String prefix = "/backup " + subcommand + ": ";
-                log.chat(localized("commands.fastback.help." + subcommand, prefix));
+                log.chat(localized("fastback.help.command." + subcommand, prefix));
                 return SUCCESS;
             }
         }
@@ -137,26 +123,5 @@ public class HelpCommand {
         final List<String> out = new ArrayList<>();
         cc.getNodes().get(0).getNode().getChildren().forEach(node -> out.add(node.getName()));
         return out;
-    }
-
-    private static void writeMarkdownReference(CommandContext<ServerCommandSource> cc, PrintWriter out) {
-        out.println();
-        out.println("Command                | Use");
-        out.println("---------------------- | ---");
-        for (final String sub : getSubcommandNames(cc)) {
-            //FIXME GROSS.  HOW DO WE LOCALIZE WITHOUT GOING THROUGH minecraft.text?
-            net.minecraft.text.Text shortHelp = net.minecraft.text.Text.translatable("commands.fastback.help." + sub);
-            String paddedSub = String.format("%-" + 22 + "s", "`" + sub + "`");
-            out.println(paddedSub + " | " + shortHelp.getString());
-        }
-        out.println();
-        out.println("Permission                       ");
-        out.println("-------------------------------- ");
-        out.println("* `" + BACKUP_COMMAND_PERM + "`");
-        for (final String sub : getSubcommandNames(cc)) {
-            String permName = subcommandPermName(sub);
-            String paddedPerm = String.format("%-" + 32 + "s", "`" + permName + "`");
-            out.println(paddedPerm);
-        }
     }
 }

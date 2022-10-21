@@ -19,52 +19,50 @@
 package net.pcal.fastback.commands;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
+import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.CommitAndPushTask;
+import net.pcal.fastback.retention.RetentionPolicy;
+import net.pcal.fastback.retention.RetentionPolicyCodec;
+import net.pcal.fastback.retention.RetentionPolicyType;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.StoredConfig;
 
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+
+import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
-import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
+import static net.pcal.fastback.commands.Commands.FAILURE;
 import static net.pcal.fastback.commands.Commands.SUCCESS;
 import static net.pcal.fastback.commands.Commands.commandLogger;
-import static net.pcal.fastback.commands.Commands.gitOp;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
+import static net.pcal.fastback.commands.SetRetentionCommand.registerSetRetentionCommand;
+import static net.pcal.fastback.commands.SetRetentionCommand.setRetentionPolicy;
 import static net.pcal.fastback.logging.Message.localized;
 
 /**
- * Perform a local backup.
+ * Command to set the snapshot retention policy for the remote.
  *
  * @author pcal
  * @since 0.2.0
  */
-enum FullCommand implements Command {
+enum SetRemoteRetentionCommand implements Command {
 
     INSTANCE;
 
-    private static final String COMMAND_NAME = "full";
+    private static final String COMMAND_NAME = "set-remote-retention";
 
-    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
-        argb.then(
-                literal(COMMAND_NAME).
-                        requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> run(ctx, cc.getSource()))
-        );
+    @Override
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
+        registerSetRetentionCommand(argb, ctx, COMMAND_NAME, (cc, rt) -> setRemotePolicy(ctx, cc, rt));
     }
 
-    public static int run(ModContext ctx, ServerCommandSource scs) {
-        final Logger log = commandLogger(ctx, scs);
-        {
-            // workaround for https://github.com/pcal43/fastback/issues/112
-            log.info("Saving before backup");
-            ctx.saveWorld();
-            log.info("Starting backup");
-        }
-        gitOp(ctx, WRITE, log, git -> {
-            new CommitAndPushTask(git, ctx, log).call();
-            log.chat(localized("fastback.chat.backup-complete"));
-            log.hud(null);
-        });
-        return SUCCESS;
+    private static int setRemotePolicy(ModContext ctx, CommandContext<ServerCommandSource> cc, RetentionPolicyType rpt) {
+        return setRetentionPolicy(ctx, cc, rpt, WorldConfig::setRemoteRetentionPolicy);
     }
+
 }

@@ -18,13 +18,17 @@
 
 package net.pcal.fastback.commands;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
+import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.GcTask;
+import net.pcal.fastback.utils.SnapshotId;
+import org.eclipse.jgit.transport.RefSpec;
 
+import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
 import static net.pcal.fastback.commands.Commands.SUCCESS;
@@ -32,37 +36,34 @@ import static net.pcal.fastback.commands.Commands.commandLogger;
 import static net.pcal.fastback.commands.Commands.gitOp;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
-import static org.apache.commons.io.FileUtils.byteCountToDisplaySize;
+import static net.pcal.fastback.utils.GitUtils.deleteRemoteBranch;
 
-
-/**
- * Runs garbage collection to try to free up disk space.
- *
- * @author pcal
- * @since 0.0.12
- */
-enum GcCommand implements Command {
+enum RemoteDeleteCommand implements Command {
 
     INSTANCE;
 
-    private static final String COMMAND_NAME = "gc";
+    private static final String COMMAND_NAME = "remote-delete";
+    private static final String ARGUMENT = "snapshot";
 
     @Override
-    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
-        argb.then(
-                literal(COMMAND_NAME).
-                        requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> gc(ctx, cc))
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, ModContext ctx) {
+        argb.then(literal(COMMAND_NAME).
+                requires(subcommandPermission(ctx, COMMAND_NAME)).then(
+                        argument(ARGUMENT, StringArgumentType.string()).
+                                suggests(SnapshotNameSuggestions.remote(ctx)).
+                                executes(cc -> delete(ctx, cc))
+                )
         );
     }
 
-    private static int gc(ModContext ctx, CommandContext<ServerCommandSource> cc) {
+    private static int delete(ModContext ctx, CommandContext<ServerCommandSource> cc) {
         final Logger log = commandLogger(ctx, cc.getSource());
         gitOp(ctx, WRITE, log, git -> {
-            final GcTask gc = new GcTask(git, ctx, log);
-            gc.call();
-            log.chat(localized("fastback.chat.gc-done", byteCountToDisplaySize(gc.getBytesReclaimed())));
-            log.hud(null);
+            final String snapshotName = cc.getLastChild().getArgument(ARGUMENT, String.class);
+            final WorldConfig wc = WorldConfig.load(git);
+            final SnapshotId sid = SnapshotId.fromUuidAndName(wc.worldUuid(), snapshotName);
+            deleteRemoteBranch(git, wc.getRemoteName(), sid.getBranchName());
+            log.chat(localized("fastback.chat.remote-delete-done", snapshotName));
         });
         return SUCCESS;
     }

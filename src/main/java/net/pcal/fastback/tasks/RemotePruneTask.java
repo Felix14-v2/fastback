@@ -19,33 +19,52 @@
 package net.pcal.fastback.tasks;
 
 import net.pcal.fastback.ModContext;
+import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
 import net.pcal.fastback.utils.SnapshotId;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
 
+import java.io.IOException;
+import java.util.Collection;
 import java.util.concurrent.Callable;
 
 import static java.util.Objects.requireNonNull;
+import static net.pcal.fastback.tasks.ListSnapshotsTask.listRemoteSnapshots;
+import static net.pcal.fastback.tasks.LocalPruneTask.doPrune;
+import static net.pcal.fastback.utils.GitUtils.deleteRemoteBranch;
 
-public class CommitAndPushTask implements Callable<Void> {
+/**
+ * Delete remote snapshot branches that should not be kept per the retention policy.
+ *
+ * @author pcal
+ * @since 0.7.0
+ */
+public class RemotePruneTask implements Callable<Collection<SnapshotId>> {
 
     private final ModContext ctx;
     private final Logger log;
     private final Git git;
 
-    public CommitAndPushTask(final Git git,
-                             final ModContext ctx,
-                             final Logger log) {
+    public RemotePruneTask(final Git git,
+                           final ModContext ctx,
+                           final Logger log) {
         this.git = requireNonNull(git);
         this.ctx = requireNonNull(ctx);
         this.log = requireNonNull(log);
     }
 
     @Override
-    public Void call() throws Exception {
-        final SnapshotId newSid = new CommitTask(git, ctx, log).call();
-        new PushTask(git, ctx, log, newSid).call();
-        return null;
+    public Collection<SnapshotId> call() throws IOException, GitAPIException {
+        final WorldConfig wc = WorldConfig.load(git);
+        return doPrune(wc, ctx, log,
+                wc::remoteRetentionPolicy,
+                () -> listRemoteSnapshots(git, wc, ctx.getLogger()),
+                sid -> {
+                    log.info("Pruning remote snapshot " + sid.getName());
+                    deleteRemoteBranch(git, wc.getRemoteName(), sid.getBranchName());
+                },
+                "fastback.chat.remote-retention-policy-not-set"
+        );
     }
-
 }

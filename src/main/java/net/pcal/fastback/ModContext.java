@@ -80,9 +80,9 @@ public class ModContext {
                         return;
                     }
                     getLogger().info("Starting auto-backup");
-                    autobackAction.getRunnable(git, ModContext.this, getLogger()).run();
+                    autobackAction.getTask(git, ModContext.this, getLogger()).call();
                     lastBackupTime = System.currentTimeMillis();
-                } catch (IOException e) {
+                } catch (Exception e) {
                     getLogger().internalError("auto-backup failed.", e);
                 }
             });
@@ -214,10 +214,6 @@ public class ModContext {
 
     public boolean isFileRemoteBare() {
         return true;
-    }
-
-    public boolean isCommandDumpEnabled() {
-        return false;
     }
 
     public boolean isReflogDeletionEnabled() {

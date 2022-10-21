@@ -18,12 +18,16 @@
 
 package net.pcal.fastback.commands;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
+import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
-import net.pcal.fastback.tasks.CommitAndPushTask;
+import net.pcal.fastback.utils.SnapshotId;
 
+import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 import static net.pcal.fastback.ModContext.ExecutionLock.WRITE;
 import static net.pcal.fastback.commands.Commands.SUCCESS;
@@ -32,38 +36,33 @@ import static net.pcal.fastback.commands.Commands.gitOp;
 import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
 
-/**
- * Perform a local backup.
- *
- * @author pcal
- * @since 0.2.0
- */
-enum FullCommand implements Command {
+enum DeleteCommand implements Command {
 
     INSTANCE;
 
-    private static final String COMMAND_NAME = "full";
+    private static final String COMMAND_NAME = "delete";
+    private static final String ARGUMENT = "snapshot";
 
-    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
-        argb.then(
-                literal(COMMAND_NAME).
-                        requires(subcommandPermission(ctx, COMMAND_NAME)).
-                        executes(cc -> run(ctx, cc.getSource()))
+    @Override
+    public void register(LiteralArgumentBuilder<ServerCommandSource> argb, ModContext ctx) {
+        argb.then(literal(COMMAND_NAME).
+                requires(subcommandPermission(ctx, COMMAND_NAME)).then(
+                        argument(ARGUMENT, StringArgumentType.string()).
+                                suggests(SnapshotNameSuggestions.local(ctx)).
+                                executes(cc -> delete(ctx, cc))
+                )
         );
     }
 
-    public static int run(ModContext ctx, ServerCommandSource scs) {
-        final Logger log = commandLogger(ctx, scs);
-        {
-            // workaround for https://github.com/pcal43/fastback/issues/112
-            log.info("Saving before backup");
-            ctx.saveWorld();
-            log.info("Starting backup");
-        }
+    private static int delete(ModContext ctx, CommandContext<ServerCommandSource> cc) {
+        final Logger log = commandLogger(ctx, cc.getSource());
         gitOp(ctx, WRITE, log, git -> {
-            new CommitAndPushTask(git, ctx, log).call();
-            log.chat(localized("fastback.chat.backup-complete"));
-            log.hud(null);
+            final String snapshotName = cc.getLastChild().getArgument(ARGUMENT, String.class);
+            final WorldConfig wc = WorldConfig.load(git);
+            final SnapshotId sid = SnapshotId.fromUuidAndName(wc.worldUuid(), snapshotName);
+            final String branchName = sid.getBranchName();
+            git.branchDelete().setForce(true).setBranchNames(branchName).call();
+            log.chat(localized("fastback.chat.delete-done", snapshotName));
         });
         return SUCCESS;
     }

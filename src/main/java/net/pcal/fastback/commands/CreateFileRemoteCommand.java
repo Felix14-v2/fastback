@@ -25,6 +25,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.pcal.fastback.ModContext;
 import net.pcal.fastback.WorldConfig;
 import net.pcal.fastback.logging.Logger;
+import net.pcal.fastback.utils.GitUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.StoredConfig;
 
@@ -40,12 +41,15 @@ import static net.pcal.fastback.commands.Commands.subcommandPermission;
 import static net.pcal.fastback.logging.Message.localized;
 import static net.pcal.fastback.utils.FileUtils.mkdirs;
 
-public class CreateFileRemoteCommand {
+enum CreateFileRemoteCommand implements Command {
+
+    INSTANCE;
 
     private static final String COMMAND_NAME = "create-file-remote";
     private static final String ARGUMENT = "file-path";
 
-    public static void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
+    @Override
+    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).then(
@@ -71,7 +75,7 @@ public class CreateFileRemoteCommand {
                 targetGitc.setInt("core", null, "bigFileThreshold", 1);
                 targetGitc.save();
             }
-            final String targetUrl = "file://" + fupHome.toAbsolutePath();
+            final String targetUrl = GitUtils.getFileUri(fupHome);
             final StoredConfig gitc = git.getRepository().getConfig();
             WorldConfig.setRemoteUrl(gitc, targetUrl);
             gitc.save();

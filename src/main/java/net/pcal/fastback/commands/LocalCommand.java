@@ -38,11 +38,14 @@ import static net.pcal.fastback.logging.Message.localized;
  * @author pcal
  * @since 0.2.0
  */
-public class LocalCommand {
+enum LocalCommand implements Command {
+
+    INSTANCE;
 
     private static final String COMMAND_NAME = "local";
 
-    public static void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
+    @Override
+    public void register(final LiteralArgumentBuilder<ServerCommandSource> argb, final ModContext ctx) {
         argb.then(
                 literal(COMMAND_NAME).
                         requires(subcommandPermission(ctx, COMMAND_NAME)).
@@ -59,7 +62,7 @@ public class LocalCommand {
             log.info("Starting backup");
         }
         gitOp(ctx, WRITE, log, git -> {
-            new CommitTask(git, ctx, log).run();
+            new CommitTask(git, ctx, log).call();
             log.chat(localized("fastback.chat.backup-complete"));
             log.hud(null);
         });

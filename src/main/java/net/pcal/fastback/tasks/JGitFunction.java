@@ -16,37 +16,17 @@
  * along with this program; If not, see <http://www.gnu.org/licenses/>.
  */
 
-package net.pcal.fastback.fabric;
+package net.pcal.fastback.tasks;
 
-import net.pcal.fastback.logging.Message;
+import org.eclipse.jgit.api.errors.GitAPIException;
 
-import java.nio.file.Path;
+import java.io.IOException;
 
 /**
- * @author pcal
- * @since 0.1.0
+ * Function with typed exceptions for typical JGit operations.
  */
-public class FabricServerProvider extends FabricProvider {
+@FunctionalInterface
+interface JGitFunction<T, R> {
 
-    @Override
-    public boolean isClient() {
-        return false;
-    }
-
-    @Override
-    public Path getSnapshotRestoreDir() {
-        return null;
-    }
-
-    @Override
-    public void setClientSavingScreenText(Message message) {
-    }
-
-    @Override
-    public void sendClientChatMessage(Message message) {
-    }
-
-    @Override
-    public void setHudText(Message message) {
-    }
+    R apply(T arg) throws IOException, GitAPIException;
 }
